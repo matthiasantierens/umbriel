@@ -76,6 +76,7 @@ namespace umbriel {
     // True for an explicit configured or client-created name. Numeric labels
     // generated for anonymous static or dynamic positions leave this false.
     bool named() const { return m_named; }
+    unsigned globalNumber() const { return m_globalNumber; }
     bool transferred() const { return m_transferred; }
     size_t index() const { return m_index; }
     bool active() const { return m_active; }
@@ -352,6 +353,7 @@ namespace umbriel {
     std::string m_name;
     size_t m_index = 0;
     bool m_named = false;
+    unsigned m_globalNumber = 0;
     bool m_transferred = false;
     bool m_active = false;
     bool m_scratchpad = false;
@@ -465,6 +467,9 @@ namespace umbriel {
     // Dynamic groups reuse their highest empty anonymous workspace before appending. Static groups reject protocol
     // create requests because their configured inventory is exact.
     Workspace* createWorkspace(const char* name);
+    Workspace* createGlobalWorkspace(unsigned number);
+    Workspace* findGlobalWorkspace(unsigned number) const;
+    unsigned firstAvailableGlobalNumber() const;
     // Move the workspace object after the destination's active member, retaining its identity, layout, and views.
     bool transferTo(Workspace& source, WorkspaceGroup& destination, std::string* error);
     // Acquire a temporary workspace for one absent home, including on a fixed output. Explicit names survive, while
@@ -482,6 +487,7 @@ namespace umbriel {
     // axis first. Called before per-workspace layout resolution.
     void refreshWorkspaceAxis();
     void reconcileDynamic();
+    void reconcileGlobal();
     // A retained launch destination rejoins the visible inventory when its first toplevel claims it.
     void restoreLaunchWorkspace(Workspace& workspace);
     void invalidateLaunchReservations();

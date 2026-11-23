@@ -315,6 +315,7 @@ namespace umbriel {
           registry::boolean("back_and_forth", &W::backAndForth),
           registry::boolean("empty_above", &W::emptyAbove),
           registry::boolean("skip_empty", &W::skipEmpty),
+          registry::boolean("global_numbers", &W::globalNumbers),
       };
       return fields;
     }

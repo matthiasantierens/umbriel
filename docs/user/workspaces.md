@@ -1,8 +1,21 @@
 # Workspaces
 
-Each output has its own workspaces. Choose a dynamic or fixed model, then use workspace rules to customize individual entries.
+By default, each output has its own workspaces. Choose a dynamic or fixed model, or opt into global numbered workspaces.
 
 ## Choose a workspace model
+
+### Global numbered workspaces
+
+```toml
+[workspaces]
+global_numbers = true
+```
+
+In this mode, numbers from 1 to 64 identify workspaces across all outputs. Selecting an existing number focuses the output that owns it. Selecting an unused number creates it on the focused output. Moving a window to an unused number creates it there as well. An empty workspace is removed after it becomes inactive, unless it is still reserved for an application launch. Each output keeps an active workspace.
+
+This mode uses a dynamic global inventory in place of per-output workspace counts, named inventories and dynamic empty sentinels. The `min_workspaces` and `empty_above` settings do not apply. On reload, active and populated workspaces are retained and assigned distinct global numbers. Numeric workspace layout rules refer to the global number. Named workspace declarations do not create persistent workspaces in this mode.
+
+A numeric selector with `--output` creates an unused number on that output; if the number already belongs to another output, the action is rejected. Next and previous actions and gestures continue to navigate the workspace order of the current output.
 
 ### Dynamic workspaces
 
@@ -81,7 +94,7 @@ A three-finger swipe along the axis changes workspaces. A swipe across it moves 
 
 Actions such as `workspace-switch` and `window-move-to-workspace` use these forms:
 
-- Bare digits from `1` to `64` select a one-based position.
+- Bare digits from `1` to `64` select a one-based position, or a global number when `global_numbers` is enabled.
 - Other text selects an exact, case-sensitive name.
 - `--name <name>` forces name lookup, including for an all-digit name.
 - `--output <output>` restricts selection to that output. A named selector can also use its unavailable original output to find an evacuated workspace.
@@ -139,6 +152,7 @@ Use `umbriel workspaces --json` for scripts. Each entry includes its stable `id`
 back_and_forth = true
 empty_above = false
 skip_empty = false
+global_numbers = false
 ```
 
 | Key              | Default | Description                                                                |
@@ -146,6 +160,7 @@ skip_empty = false
 | `back_and_forth` | `false` | Selecting the active workspace returns to the previous one on that output. |
 | `empty_above`    | `false` | Keep a leading empty workspace on dynamic outputs.                         |
 | `skip_empty`     | `false` | Skip unoccupied workspaces for workspace swipes and next/previous actions. |
+| `global_numbers` | `false` | Use one global namespace for numbered workspaces.                          |
 
 Direct workspace selection and moving windows still allow empty destinations. If no occupied workspace exists in the chosen direction, focus stays where it is. With `cyclic_workspaces`, the action search wraps around the output. On dynamic outputs, the trailing empty workspace is skipped too. Touchpad workspace swipes also skip empty workspaces. To hide empty workspaces in the overview, see [`hide_empty_workspaces`](workspaces-overview.md#settings-and-behavior).
 

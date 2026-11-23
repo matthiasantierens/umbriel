@@ -1123,6 +1123,7 @@ namespace umbriel {
       bool emptyAbove = false;
       // Skip unoccupied workspaces when switching to the next or previous workspace.
       bool skipEmpty = false;
+      bool globalNumbers = false;
       bool operator==(const Workspaces&) const = default;
     } workspaces;
 

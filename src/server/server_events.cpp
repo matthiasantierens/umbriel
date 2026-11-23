@@ -2877,6 +2877,7 @@ namespace umbriel {
             .workspaceName = workspace->name(),
             .workspaceIndex = workspace->index(),
             .workspaceNamed = workspace->named(),
+            .globalNumber = workspace->globalNumber(),
             .configGeneration = configStore().generation(),
             .layoutModeOverride = workspace->layoutModeOverride(),
             .transferredLayout =
@@ -3259,7 +3260,10 @@ namespace umbriel {
         refugeHold = workspace->reserveForLaunch();
         targetGroup = workspace->group();
         target = targetGroup->output();
-      } else if (groupHome.workspaceOrigin && groupHome.workspaceOrigin->transferredLayout) {
+      } else if (
+          groupHome.workspaceOrigin
+          && (groupHome.workspaceOrigin->transferredLayout || groupHome.workspaceOrigin->globalNumber != 0)
+      ) {
         workspace = targetGroup->restoreTransferredWorkspace(*groupHome.workspaceOrigin);
       } else if (groupHome.workspaceNamed) {
         workspace = targetGroup->workspaceNamed(groupHome.workspaceName);
