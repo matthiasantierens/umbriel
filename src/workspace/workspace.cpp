@@ -334,6 +334,9 @@ namespace umbriel {
     if (m_active == active) {
       return;
     }
+    if (active && m_globalSentinel) {
+      m_group->activateGlobalSentinel(*this);
+    }
     m_active = active;
     wlr_ext_workspace_handle_v1_set_active(m_handle, active);
     applyVisibility();
@@ -479,6 +482,9 @@ namespace umbriel {
   void Workspace::addView(View* view, bool attachToLayout, LayoutAttachOrigin origin, bool reconcile) {
     if (view == nullptr || std::ranges::find(m_views, view) != m_views.end()) {
       return;
+    }
+    if (m_globalSentinel && !view->pinned()) {
+      m_group->activateGlobalSentinel(*this);
     }
     m_group->restoreLaunchWorkspace(*this);
     m_views.push_back(view);
@@ -3201,6 +3207,7 @@ namespace umbriel {
     }
     for (const auto& workspace : m_workspaces) {
       workspace->m_globalNumber = 0;
+      workspace->m_globalSentinel = false;
     }
     const OutputIdentity identity = m_output->identity();
     auto resolvedSet = resolveWorkspacesForOutput(config(), identity);
@@ -3736,7 +3743,7 @@ namespace umbriel {
     if (includePrev) {
       for (size_t index = idx; index > 0;) {
         Workspace* candidate = workspaceAt(--index);
-        if (!skipEmpty || candidate->hasViews()) {
+        if (!skipEmpty || candidate->hasViews() || candidate->globalSentinel()) {
           m_slide.previous = candidate;
           break;
         }
@@ -3745,7 +3752,10 @@ namespace umbriel {
     if (includeNext) {
       for (size_t index = idx + 1; index < workspaceCount(); ++index) {
         Workspace* candidate = workspaceAt(index);
-        if (!skipEmpty || candidate->hasViews()) {
+        if (candidate->globalSentinel() && nextGlobalDynamicNumber() == 0) {
+          break;
+        }
+        if (!skipEmpty || candidate->hasViews() || candidate->globalSentinel()) {
           m_slide.next = candidate;
           break;
         }
@@ -3797,6 +3807,10 @@ namespace umbriel {
       target = m_slide.next;
     }
     if (target == nullptr) {
+      delta = 0;
+      target = m_slide.base;
+    }
+    if (target != nullptr && target->globalSentinel() && nextGlobalDynamicNumber() == 0) {
       delta = 0;
       target = m_slide.base;
     }
@@ -3874,6 +3888,9 @@ namespace umbriel {
 
   void WorkspaceGroup::activate(Workspace* workspace, bool animate) {
     if (workspace == nullptr || workspace->group() != this || workspace->scratchpad()) {
+      return;
+    }
+    if (workspace->globalSentinel() && nextGlobalDynamicNumber() == 0) {
       return;
     }
     restoreLaunchWorkspace(*workspace);
@@ -3971,8 +3988,8 @@ namespace umbriel {
     m_server->refocus(m_output);
   }
 
-  unsigned WorkspaceGroup::firstAvailableGlobalNumber() const {
-    for (unsigned number = 1; number <= kMaxWorkspaces; ++number) {
+  unsigned WorkspaceGroup::firstAvailableGlobalNumber(unsigned after) const {
+    for (unsigned number = after + 1; number <= kMaxWorkspaces; ++number) {
       const auto contains = [number](const WorkspaceGroup* group) {
         return group != nullptr
             && (std::ranges::any_of(
@@ -3992,6 +4009,14 @@ namespace umbriel {
       }
     }
     return 0;
+  }
+
+  unsigned WorkspaceGroup::nextGlobalDynamicNumber() const {
+    unsigned highest = 0;
+    for (const auto& workspace : m_workspaces) {
+      highest = std::max(highest, workspace->globalNumber());
+    }
+    return firstAvailableGlobalNumber(highest);
   }
 
   Workspace* WorkspaceGroup::findGlobalWorkspace(unsigned number) const {
@@ -4032,6 +4057,19 @@ namespace umbriel {
     return result;
   }
 
+  void WorkspaceGroup::activateGlobalSentinel(Workspace& workspace) {
+    if (!workspace.m_globalSentinel || workspace.group() != this) {
+      return;
+    }
+    const unsigned number = nextGlobalDynamicNumber();
+    if (number == 0) {
+      return;
+    }
+    workspace.m_globalSentinel = false;
+    workspace.m_globalNumber = number;
+    workspace.rename(std::to_string(number), workspace.index(), true);
+  }
+
   void WorkspaceGroup::reconcileGlobal() {
     if (slideActive()) {
       return;
@@ -4040,7 +4078,8 @@ namespace umbriel {
     pruneDisplacedWorkspaces();
     for (size_t index = m_workspaces.size(); index-- > 0;) {
       Workspace* workspace = m_workspaces[index].get();
-      if (workspace != m_active
+      if (!workspace->globalSentinel()
+          && workspace != m_active
           && std::ranges::none_of(workspace->allViews(), &View::mapped)
           && !workspace->launchReserved()
           && !workspace->hasPendingLaunchView()) {
@@ -4052,7 +4091,7 @@ namespace umbriel {
       }
     }
     for (const auto& workspace : m_workspaces) {
-      if (workspace->globalNumber() == 0) {
+      if (workspace->globalNumber() == 0 && !workspace->globalSentinel()) {
         const unsigned number = firstAvailableGlobalNumber();
         if (number == 0) {
           kLog.error("cannot assign global workspace number: all numbers are in use");
@@ -4072,6 +4111,29 @@ namespace umbriel {
       }
     }
     refreshWorkspaceMetadata();
+    if (config().workspaces.globalDynamic && storedWorkspaceCount() < kMaxWorkspaces) {
+      const bool hasSentinel =
+          std::ranges::any_of(m_workspaces, [](const auto& workspace) { return workspace->globalSentinel(); });
+      const bool activeEmptyAtEnd =
+          m_active != nullptr && !m_active->occupied() && m_active->index() + 1 == m_workspaces.size();
+      if (!hasSentinel && !activeEmptyAtEnd && nextGlobalDynamicNumber() != 0) {
+        const size_t index = m_workspaces.size();
+        auto sentinel = createConfiguredWorkspace(
+            {"+", true, resolveUnnamedWorkspaceLayout(config(), m_output->identity(), index)}, index
+        );
+        sentinel->m_globalSentinel = true;
+        m_workspaces.push_back(std::move(sentinel));
+        refreshWorkspaceMetadata();
+      }
+    } else if (!config().workspaces.globalDynamic) {
+      const auto removed = std::erase_if(m_workspaces, [this](const auto& workspace) {
+        return workspace->globalSentinel() && workspace.get() != m_active && !workspace->launchReserved();
+      });
+      if (removed != 0) {
+        m_server->scheduleIpcWorkspacesEvent();
+      }
+      refreshWorkspaceMetadata();
+    }
     if (Overview* overview = m_server->overview(); overview != nullptr && overview->active()) {
       overview->onWorkspaceInventoryChanged(this);
     }
@@ -4092,6 +4154,43 @@ namespace umbriel {
       return empty->get();
     }
     return insertDynamicWorkspace(m_workspaces.size());
+  }
+
+  bool WorkspaceGroup::swapActiveWith(WorkspaceGroup& other, std::string* error) {
+    if (&other == this || m_active == nullptr || other.m_active == nullptr) {
+      if (error != nullptr) {
+        *error = "output has no active workspace to swap";
+      }
+      return false;
+    }
+    // Transfer into the group with capacity first. The second transfer then
+    // returns a workspace to a group that has just released one.
+    WorkspaceGroup* first = this;
+    WorkspaceGroup* second = &other;
+    if (second->storedWorkspaceCount() >= kMaxWorkspaces) {
+      std::swap(first, second);
+    }
+    if (second->storedWorkspaceCount() >= kMaxWorkspaces) {
+      if (error != nullptr) {
+        *error = "both outputs are at the workspace limit";
+      }
+      return false;
+    }
+    Workspace* leaving = first->m_active;
+    Workspace* returning = second->m_active;
+    // A transfer reconciles its destination; retain both empty workspaces
+    // until the second half of the swap finishes.
+    const auto retainLeaving = leaving->reserveForLaunch();
+    const auto retainReturning = returning->reserveForLaunch();
+    if (!first->transferTo(*leaving, *second, error)) {
+      return false;
+    }
+    if (!second->transferTo(*returning, *first, error)) {
+      std::string ignored;
+      second->transferTo(*leaving, *first, &ignored);
+      return false;
+    }
+    return true;
   }
 
   bool WorkspaceGroup::transferTo(Workspace& source, WorkspaceGroup& destination, std::string* error) {

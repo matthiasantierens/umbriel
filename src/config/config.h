@@ -1124,6 +1124,7 @@ namespace umbriel {
       // Skip unoccupied workspaces when switching to the next or previous workspace.
       bool skipEmpty = false;
       bool globalNumbers = false;
+      bool globalDynamic = false;
       bool operator==(const Workspaces&) const = default;
     } workspaces;
 

@@ -192,6 +192,12 @@ numlock_toggle = true
 # "toggle-overlay" = ""
 
 # ==============================================================================
+# Optional global workspace numbers follow workspaces across monitors.
+# [workspaces]
+# global_numbers = true
+# global_dynamic = true
+
+# ==============================================================================
 # Keybinds
 # Defining this table replaces the built-in bind set, so every active bind that
 # should remain available is listed here.

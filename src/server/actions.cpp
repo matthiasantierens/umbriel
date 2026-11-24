@@ -216,6 +216,9 @@ namespace umbriel {
     // land proportionally via their remembered usable-area fraction. With `follow` clear the window lands on `target`
     // while the seat stays on the source workspace and the cursor stays where it was.
     void moveViewToWorkspace(Server& server, View& view, Workspace& target, bool follow = true) {
+      if (target.globalSentinel() && target.group()->nextGlobalDynamicNumber() == 0) {
+        return;
+      }
       Workspace* source = view.workspace();
       const bool workspaceChanged = source != &target;
       ScratchpadManager* scratchpad = server.scratchpadManager();
@@ -1635,7 +1638,7 @@ namespace umbriel {
         if (target == nullptr || target == group->active()) {
           return true;
         }
-        if (!config().workspaces.skipEmpty || target->hasViews()) {
+        if (!config().workspaces.skipEmpty || target->hasViews() || target->globalSentinel()) {
           group->select(target);
           return true;
         }
@@ -1880,6 +1883,25 @@ namespace umbriel {
       Workspace* targetWs = targetGroup->active();
       if (sourceWs == nullptr || targetWs == nullptr) {
         return reject(error, "output has no active workspace");
+      }
+      if (config().workspaces.globalNumbers) {
+        View* seatFocus = seatFocusedWindow(server);
+        if (!sourceGroup->swapActiveWith(*targetGroup, error)) {
+          return true;
+        }
+        const bool followFocus = config().input.cursor.followsFocus;
+        View* target = followFocus && seatFocus != nullptr && seatFocus->mapped()
+            ? seatFocus
+            : sourceGroup->active()->focusedView();
+        if (target != nullptr) {
+          server.focusView(target, FocusReason::Gesture);
+          if (followFocus) {
+            finishWorkspaceTransfer(server, *target);
+          }
+        } else {
+          server.refocusExplicit(sourceOutput);
+        }
+        return true;
       }
       if (!sourceWs->hasViews() && !targetWs->hasViews()) {
         return true;
